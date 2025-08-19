@@ -1,1 +1,12 @@
+---
+title: "Latihan 1"
+author: "Azzah Zhafira Shidiq"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+x = 3+2
+x
+```
 

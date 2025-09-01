@@ -356,6 +356,7 @@ pred1 <- winter1$fitted[,2]
 actual1 <- training.ts       
 
 pred1.opt <- winter1.opt$fitted[,2]
+MAPE1 <- mean(abs((actual1 - pred1) / actual1)) * 100
 MAPE1.opt <- mean(abs((training.ts - pred1.opt) / training.ts)) * 100
 
 

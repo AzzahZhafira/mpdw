@@ -495,7 +495,7 @@ akurasi2.train$Nilai_MAPE <- c(MAPE2, MAPE2.opt)
 akurasi2.train
 ```
 
-**Hasil:** Pada data training, nilai SSE, RMSE, dan MAPE menunjukkan bahwa Winter 1 Optimal lebih akurat dibanding Winter 1 biasa, karena error-nya lebih kecil. Nilai MAPE kurnag dari 30%. Sehingga akurasi prediksi data testing tergolong cukup baik.
+**Hasil:** Pada data training, nilai SSE, RMSE, dan MAPE menunjukkan bahwa Winter 1 optimal lebih akurat dibanding Winter 1 biasa, karena error-nya lebih kecil. Nilai MAPE kurnag dari 30%. Sehingga akurasi prediksi data testing tergolong cukup baik.
 
 #### Akurasi Data Uji
 

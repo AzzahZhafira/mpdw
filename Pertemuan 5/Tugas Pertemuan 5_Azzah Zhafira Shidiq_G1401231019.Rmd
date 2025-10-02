@@ -1,1 +1,447 @@
+---
+title: "Tugas Pertemuan 5"
+author: "Azzah Zhafira Shidiq - G1401231019"
+date: "`r Sys.Date()`"
+output: rmdformats::readthedown
+---
 
+```{r}
+library(rio)
+library(ggplot2)
+library(tsibble)
+library(tseries)
+library(MASS)
+```
+
+# 1. Import Data
+
+**Deskripsi:**
+
+Dataset ini merupakan data harian selama 5 tahun terkait aktivitas lalu lintas situs web *statforecasting.com*. Peubah Page Loads merepresentasikan jumlah permintaan (loads) atau aktivitas pemuatan halaman yang terjadi pada situs web tersebut.
+
+Terkait cakupan analisis untuk tugas ini, akan dianalisis 100 baris pertama dari peubah Page Loads dengan periode data yaitu 14 September 2014 sampai 22 Desember 2014.
+
+```{r}
+data <- import("https://raw.githubusercontent.com/yehezkinovandri/mpdw/main/Pertemuan%201/daily-website-visitors.csv")
+
+data100 <- data[1:100, 4:5]
+
+# Ubah format data
+data100$Date <- as.Date(data100$Date, format = "%m/%d/%Y")
+data100$Page.Loads <- as.numeric(gsub(",", "", data100$Page.Loads))
+
+str(data100)
+```
+
+```{r}
+# Urutkan data
+data100 <- data100[order(data100$Date), ]
+
+# Buat urutan tanggal lengkap sesuai rentang
+all_dates <- seq(min(data100$Date), max(data100$Date), by = "day")
+
+# Cek tanggal yang hilang
+missing_dates <- setdiff(all_dates, data100$Date)
+
+missing_dates
+```
+
+Berdasarkan pengecekan rentang tanggal pada variabel Date, diperoleh hasil `numeric(0)`, yang menunjukkan bahwa tidak terdapat tanggal yang hilang dalam periode 14 September 2014 hingga 22 Desember 2014. Dengan demikian, data memiliki kelengkapan tanggal secara penuh dan dapat digunakan untuk analisis lebih lanjut tanpa perlu imputasi atau penyesuaian tanggal.
+
+# 2. Plot *Time Series*
+
+```{r}
+data100.ts <- ts(data100$Page.Loads)
+ts.plot(data100.ts, xlab = "Time Periode", ylab="Page Loads",
+        main = "Time Series Plot")
+points(data100.ts)
+```
+
+```{r}
+lattice::densityplot(as.vector(data100.ts))
+```
+
+Berdasarkan plot time series tersebut, terlihat bahwa data tidak stasioner dalam rataan, ditandai dengan adanya tren positif (mingguan), tetapi stasioner dalam ragam, ditandai dengan adanya lebar pita pada plot yang cenderung sama. **Tidak Stasioner dalam Rataan, Stasioner dalam Ragam**
+
+# 3. Plot ACF
+
+```{r}
+acf(data100.ts)
+```
+
+Plot ACF cenderung membentuk *tails off* dan menyerupai gelombang sinus. Selain itu, terdapat banyak lag yang nilainya melewati batas signifikansi pada plot ACF, yang menunjukkan adanya keterkaitan (autokorelasi) dalam data. Hal ini mengindikasi **data tak stasioner dalam rataan**.
+
+# 4. Uji ADF
+
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+```{r}
+adf.test(data100.ts)
+```
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.087 yang lebih besar dari taraf nyata 5% sehingga tak tolak $H_0$ dan menandakan bahwa **data tidak stasioner dalam rataan**. Hal ini sesuai dengan hasil eksplorasi menggunakan plot time series dan plot ACF.
+
+# 5. Plot Box-Cox
+
+```{r}
+index <- seq(1, 100)
+
+# Uji Box-Cox
+bc <- boxcox(
+  data100.ts ~ index, 
+  lambda = seq(-1,4, by=0.001)
+  )
+
+# Nilai Lambda Optimum
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+# Selang Kepercayaan
+ci_lambda <- bc$x[bc$y > max(bc$y) - 1/2 * qchisq(.95,1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, 
+  Batas_Atas = ci_upper)
+```
+
+Gambar di atas menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **1.363** dan pada selang kepercayaan 95% nilai memiliki batas bawah **0.748** dan batas atas **2.013**. Selang tersebut memuat nilai satu sehingga dapat dikatakan bahwa **data stasioner dalam ragam**. 
+
+# 6. Differencing
+
+Dalam analisis deret waktu, differencing merupakan salah satu prosedur transformasi yang digunakan untuk memperoleh sifat stasioneritas dalam rataan. Metode ini dilakukan dengan menghitung selisih nilai observasi antar periode sehingga pola tren atau ketidakstasioneran dalam rataan dapat dieliminasi.
+
+Secara umum, pembedaan pertama ditulis sebagai:
+
+$$
+\nabla Y_t = Y_t - Y_{t-1}
+$$
+
+Jika tren linier masih tersisa/ belum stasioner, dapat dilakukan differencing kedua:\
+$$
+\nabla^2 Y_t = \nabla (\nabla Y_t) = Y_t - 2Y_{t-1} + Y_{t-2}
+$$
+
+### Plot *Time Series*
+
+```{r}
+# Differencing pertama pada page loads
+data_diff1 <- diff(data100.ts, differences = 1)
+
+# Plot hasil differencing
+ts.plot(data_diff1,
+        main = "Diferensiasi Satu Kali",
+        col = "blue", lwd = 2)
+```
+
+### Plot ACF: Differencing 1 kali
+
+```{r}
+acf(data_diff1)
+```
+
+### Uji ADF: Differencing 1 Kali
+
+```{r}
+adf.test(data_diff1)
+```
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.01 yang lebih kecil dari taraf nyata 5% sehingga tolak $H_0$ dan menandakan bahwa **data stasioner dalam rataan**.
+
+### Plot Box-Cox
+
+```{r}
+# Periksa nilai minimum data_diff1
+min_val <- min(data_diff1)
+print(min_val)
+```
+
+```{r}
+index <- seq(1, 99)
+
+# Uji Box-Cox
+bc <- boxcox(
+  data_diff1+1700 ~ index, 
+  lambda = seq(-1,4, by=0.1)
+  )
+
+# Nilai Lambda Optimum
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+# Selang Kepercayaan
+ci_lambda <- bc$x[bc$y > max(bc$y) - 1/2 * qchisq(.95,1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, 
+  Batas_Atas = ci_upper)
+```
+
+Gambar di atas menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **0.566** dan pada selang kepercayaan 95% nilai memiliki batas bawah **0.364** dan batas atas **0.818**. Selang tersebut tidak memuat nilai satu sehingga dapat dikatakan bahwa **data tidak stasioner dalam ragam**. 
+
+**`Meskipun data sudah stasioner dalam rataan, namun data tidak stasioner dalam ragam. Maka dilakukan transformasi data.`**
+
+# 7. Transformasi Data (Box Cox)
+
+```{r}
+# Transformasi BoxCox
+data_diff1_trans <- ((data_diff1+1700)^lambda - 1) / lambda
+head(data_diff1_trans)
+```
+
+### Plot *Time Series*
+
+```{r}
+data_trans.ts <- ts(data_diff1_trans)
+ts.plot(data_trans.ts, xlab = "Time Periode", ylab="Page Loads",
+        main = "Time Series Plot")
+points(data_trans.ts)
+```
+
+### Plot ACF
+
+```{r}
+acf(data_diff1_trans)
+```
+
+### Uji ADF: Differencing 1 Kali
+
+```{r}
+adf.test(data_diff1_trans)
+```
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.01 yang lebih kecil dari taraf nyata 5% sehingga tolak $H_0$ dan menandakan bahwa **data stasioner dalam rataan**.
+
+### Plot Box-Cox
+
+```{r}
+min_val_tr <- min(data_diff1_trans)
+print(min_val_tr)
+```
+
+```{r}
+index <- seq(1, 99)
+
+# Uji Box-Cox
+bc <- boxcox(
+  data_diff1_trans+15 ~ index, 
+  lambda = seq(-1,4, by=0.001)
+  )
+
+# Nilai Lambda Optimum
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+# Selang Kepercayaan
+ci_lambda <- bc$x[bc$y > max(bc$y) - 1/2 * qchisq(.95,1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, 
+  Batas_Atas = ci_upper)
+```
+
+Gambar di atas menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **1.121** dan pada selang kepercayaan 95% nilai memiliki batas bawah **0.616** dan batas atas **1.626**. Selang tersebut memuat nilai satu sehingga dapat dikatakan bahwa **data stasioner dalam ragam**. 
+
+==============================================================
+
+# 8. Partisi Data
+
+## Bagian 1
+
+```{r}
+data1 <- data100$Page.Loads[1:33] |> ts()
+mean(data1)
+var(data1)
+```
+
+### Plot *Time Series*
+
+```{r}
+data1.ts <- ts(data1)
+ts.plot(data1.ts, xlab = "Time Periode", ylab="Page Loads",
+        main = "Time Series Plot")
+points(data1.ts)
+```
+
+Berdasarkan plot time series tersebut, terlihat bahwa data tidak stasioner dalam rataan, ditandai dengan adanya tren positif (mingguan), tetapi stasioner dalam ragam, ditandai dengan adanya lebar pita pada plot yang cenderung sama. **Tidak Stasioner dalam Rataan, Stasioner dalam Ragam**
+
+### Plot ACF
+
+```{r}
+acf(data1)
+```
+
+### Uji ADF: Differencing 1 Kali
+
+```{r}
+adf.test(data1)
+```
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.01 yang lebih kecil dari taraf nyata 5% sehingga tolak $H_0$ dan menandakan bahwa **data stasioner dalam rataan**.
+
+### Plot Box-Cox
+
+```{r}
+index <- seq(1, 33)
+
+# Uji Box-Cox
+bc <- boxcox(
+  data1 ~ index, 
+  lambda = seq(-1,4, by=0.001)
+  )
+
+# Nilai Lambda Optimum
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+# Selang Kepercayaan
+ci_lambda <- bc$x[bc$y > max(bc$y) - 1/2 * qchisq(.95,1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, 
+  Batas_Atas = ci_upper)
+```
+
+Gambar di atas menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **1.458** dan pada selang kepercayaan 95% nilai memiliki batas bawah **0.559** dan batas atas **3.129**. Selang tersebut memuat nilai satu sehingga dapat dikatakan bahwa **data stasioner dalam ragam**. 
+
+## Bagian 2
+
+```{r}
+data2 <- data100$Page.Loads[1:65] |> ts()
+mean(data2)
+var(data2)
+```
+
+### Plot *Time Series*
+
+```{r}
+data2.ts <- ts(data2)
+ts.plot(data2.ts, xlab = "Time Periode", ylab="Page Loads",
+        main = "Time Series Plot")
+points(data2.ts)
+```
+
+Berdasarkan plot time series tersebut, terlihat bahwa data tidak stasioner dalam rataan, ditandai dengan adanya tren positif (mingguan), tetapi stasioner dalam ragam, ditandai dengan adanya lebar pita pada plot yang cenderung sama. **Tidak Stasioner dalam Rataan, Stasioner dalam Ragam**
+
+### Plot ACF
+
+```{r}
+acf(data2)
+```
+
+### Uji ADF: Differencing 1 Kali
+
+```{r}
+adf.test(data2)
+```
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.01 yang lebih kecil dari taraf nyata 5% sehingga tolak $H_0$ dan menandakan bahwa **data stasioner dalam rataan**.
+
+### Plot Box-Cox
+
+```{r}
+index <- seq(1, 65)
+
+# Uji Box-Cox
+bc <- boxcox(
+  data2 ~ index, 
+  lambda = seq(-1,4, by=0.001)
+  )
+
+# Nilai Lambda Optimum
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+# Selang Kepercayaan
+ci_lambda <- bc$x[bc$y > max(bc$y) - 1/2 * qchisq(.95,1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, 
+  Batas_Atas = ci_upper)
+```
+
+Gambar di atas menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **1.458** dan pada selang kepercayaan 95% nilai memiliki batas bawah **0.608** dan batas atas **2.421**. Selang tersebut memuat nilai satu sehingga dapat dikatakan bahwa **data stasioner dalam ragam**. 
+
+## Bagian 3
+
+```{r}
+data3 <- data100$Page.Loads[1:80] |> ts()
+mean(data3)
+var(data2)
+```
+
+### Plot *Time Series*
+
+```{r}
+data3.ts <- ts(data3)
+ts.plot(data3.ts, xlab = "Time Periode", ylab="Page Loads",
+        main = "Time Series Plot")
+points(data3.ts)
+```
+
+Berdasarkan plot time series tersebut, terlihat bahwa data tidak stasioner dalam rataan, ditandai dengan adanya tren positif (mingguan), tetapi stasioner dalam ragam, ditandai dengan adanya lebar pita pada plot yang cenderung sama. **Tidak Stasioner dalam Rataan, Stasioner dalam Ragam**
+
+### Plot ACF
+
+```{r}
+acf(data3)
+```
+
+### Uji ADF: Differencing 1 Kali
+
+```{r}
+adf.test(data3)
+```
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.01 yang lebih kecil dari taraf nyata 5% sehingga tolak $H_0$ dan menandakan bahwa **data stasioner dalam rataan**.
+
+### Plot Box-Cox
+
+```{r}
+index <- seq(1, 80)
+
+# Uji Box-Cox
+bc <- boxcox(
+  data3 ~ index, 
+  lambda = seq(-1,4, by=0.001)
+  )
+
+# Nilai Lambda Optimum
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+# Selang Kepercayaan
+ci_lambda <- bc$x[bc$y > max(bc$y) - 1/2 * qchisq(.95,1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, 
+  Batas_Atas = ci_upper)
+```
+
+Gambar di atas menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **1.458** dan pada selang kepercayaan 95% nilai memiliki batas bawah **0.677** dan batas atas **2.280**. Selang tersebut memuat nilai satu sehingga dapat dikatakan bahwa **data stasioner dalam ragam**. 
+
+# 9. Kesimpulan
+Data harian pengunjung website 100 baris pertama (peubah Page Loads) memiliki plot deret waktu yang mengindikasikan pola yang stasioner dalam ragam tetapi tidak stasioner dalam rataan. Hal ini terbukti dengan plot ACF yang cenderung membentuk pola tails off dan menyerupai gelombang sinus, serta terdapat banyak lag yang nilainya melewati batas signifikansi pada plot ACF, Uji ADF dengan *p-value* lebih besar dari 5% sedangkan selang kepercayaan lambda pada plot Box-cox memuat nilai satu.
+
+Setelah dilakukan diferensiasi 1 kali, stasioneritas rataan sudah teratasi, tetapi data menjadi tidak stasioner dalam ragam. Selanjutnya dilakukan transformasi boxcox dengan lambhda optimum dan hasilnya data menjadi stasioner baik dalam rataan maupun dalam ragam. Hal ini didapat berdasarkan nilai *p-value* uji ADF sebesar 0.01 yang lebih kecil dari 5% dan plot Box-cox yang memuat nilai satu dalam selang kepercayaannya.
+
+Partisi data pada rentang baris 1–35, 1–65, dan 1–80 menghasilkan deret waktu yang stasioner baik dalam rataan maupun dalam ragam.
